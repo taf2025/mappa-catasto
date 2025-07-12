@@ -18,6 +18,179 @@
   </style>
 </head>
 <body>
-  <!-- Il resto del body è già incluso nel canvas -->
+  <h2>Importa punti (CSV: punto,lat,long)</h2>
+  <input type="file" id="fileInput" accept=".csv">
+  <h3>Aggiungi punto manualmente</h3>
+  <input type="text" id="nome" placeholder="Nome punto">
+  <input type="text" id="lat" placeholder="Latitudine">
+  <input type="text" id="long" placeholder="Longitudine">
+  <button onclick="aggiungiPunto()">Aggiungi</button>
+  <button onclick="aggiungiMiaPosizione()">📍 Usa la mia posizione</button>
+  <h3>Oppure inserisci un indirizzo come punto di partenza</h3>
+  <input type="text" id="indirizzo" placeholder="Es: Via Roma 10, Milano">
+  <button onclick="geocodificaIndirizzo()">📌 Usa indirizzo come partenza</button>
+  <h3>Punti inseriti:</h3>
+  <table id="tabella">
+    <thead><tr><th>Nome</th><th>Lat</th><th>Long</th><th>🗑</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <button onclick="calcolaPercorso()">Calcola percorso ottimizzato</button>
+  <button onclick="salvaPercorso()">Salva percorso</button>
+  <button onclick="esportaKML()">Esporta KML</button>
+  <h3>Storico percorsi salvati:</h3>
+  <select id="storicoSelect"></select>
+  <button onclick="caricaPercorso()">Carica</button>
+  <button onclick="cancellaPercorso()">Elimina</button>
+  <h3>Link Google Maps:</h3>
+  <div id="output"></div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const punti = [];
+    let mappa, markers = [], lineaPercorso;
+
+    function inizializzaMappa() {
+      if (!mappa) {
+        mappa = L.map('map').setView([41.5, 13.5], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(mappa);
+      } else {
+        markers.forEach(m => m.remove());
+        if (lineaPercorso) lineaPercorso.remove();
+        markers = [];
+      }
+    }
+
+    function aggiornaTabella() {
+      const tbody = document.querySelector('#tabella tbody');
+      tbody.innerHTML = '';
+      punti.forEach((p, i) => {
+        const row = `<tr><td>${p.nome}</td><td>${p.lat}</td><td>${p.lon}</td><td><button onclick="rimuoviPunto(${i})">🗑</button></td></tr>`;
+        tbody.insertAdjacentHTML('beforeend', row);
+      });
+    }
+
+    function rimuoviPunto(index) {
+      punti.splice(index, 1);
+      aggiornaTabella();
+    }
+
+    document.getElementById('fileInput').addEventListener('change', function(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const lines = e.target.result.split('
+');
+        for (const line of lines) {
+          const [nome, lat, lon] = line.trim().split(',');
+          if (!lat || !lon || isNaN(lat) || isNaN(lon)) continue;
+          punti.push({ nome, lat: parseFloat(lat), lon: parseFloat(lon) });
+        }
+        aggiornaTabella();
+      };
+      reader.readAsText(file);
+    });
+
+    function aggiungiPunto() {
+      const nome = document.getElementById('nome').value;
+      const lat = parseFloat(document.getElementById('lat').value);
+      const lon = parseFloat(document.getElementById('long').value);
+      if (!nome || isNaN(lat) || isNaN(lon)) return alert("Inserisci dati validi");
+      punti.push({ nome, lat, lon });
+      aggiornaTabella();
+    }
+
+    function aggiungiMiaPosizione() {
+      if (!navigator.geolocation) return alert("Geolocalizzazione non supportata");
+      navigator.geolocation.getCurrentPosition(pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        punti.unshift({ nome: "📍 Mia posizione", lat, lon });
+        aggiornaTabella();
+      }, err => alert("Errore nel recupero posizione"));
+    }
+
+    function geocodificaIndirizzo() {
+      const indirizzo = document.getElementById('indirizzo').value;
+      if (!indirizzo) return alert("Inserisci un indirizzo valido");
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(indirizzo)}`)
+        .then(r => r.json())
+        .then(dati => {
+          if (dati.length === 0) return alert("Indirizzo non trovato");
+          const luogo = dati[0];
+          punti.unshift({ nome: `📌 ${luogo.display_name}`, lat: parseFloat(luogo.lat), lon: parseFloat(luogo.lon) });
+          aggiornaTabella();
+        })
+        .catch(() => alert("Errore nella ricerca dell'indirizzo"));
+    }
+
+    function calcolaPercorso() {
+      if (punti.length < 2) return alert("Servono almeno 2 punti per calcolare il percorso");
+      inizializzaMappa();
+
+      markers = punti.map((p, i) => {
+        const icon = L.divIcon({
+          className: 'marker-num',
+          html: `<div style="background:#2e8bff;color:white;border-radius:50%;width:24px;height:24px;text-align:center;line-height:24px;font-size:14px;">${i + 1}</div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+        const marker = L.marker([p.lat, p.lon], { icon }).addTo(mappa).bindPopup(`${i + 1}. ${p.nome}`);
+        return marker;
+      });
+
+      const lineCoords = punti.map(p => [p.lat, p.lon]);
+      lineaPercorso = L.polyline(lineCoords, { color: 'blue' }).addTo(mappa);
+      mappa.fitBounds(lineaPercorso.getBounds());
+
+      const googleLink = `https://www.google.com/maps/dir/?api=1&origin=${punti[0].lat},${punti[0].lon}&destination=${punti[punti.length - 1].lat},${punti[punti.length - 1].lon}&waypoints=${punti.slice(1, -1).map(p => `${p.lat},${p.lon}`).join('|')}`;
+      document.getElementById('output').innerHTML = `<a href="${googleLink}" target="_blank">Apri in Google Maps</a>`;
+    }
+
+    function salvaPercorso() {
+      const nomePercorso = prompt("Inserisci un nome per salvare il percorso:");
+      if (!nomePercorso) return;
+      const dati = JSON.stringify(punti);
+      localStorage.setItem(`percorso_${nomePercorso}`, dati);
+      aggiornaStorico();
+    }
+
+    function aggiornaStorico() {
+      const select = document.getElementById('storicoSelect');
+      select.innerHTML = '';
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('percorso_'))
+        .forEach(k => {
+          const nome = k.replace('percorso_', '');
+          const option = document.createElement('option');
+          option.value = k;
+          option.textContent = nome;
+          select.appendChild(option);
+        });
+    }
+
+    function caricaPercorso() {
+      const select = document.getElementById('storicoSelect');
+      const chiave = select.value;
+      if (!chiave) return;
+      const dati = localStorage.getItem(chiave);
+      if (!dati) return;
+      punti.length = 0;
+      punti.push(...JSON.parse(dati));
+      aggiornaTabella();
+    }
+
+    function cancellaPercorso() {
+      const select = document.getElementById('storicoSelect');
+      const chiave = select.value;
+      if (!chiave) return;
+      localStorage.removeItem(chiave);
+      aggiornaStorico();
+    }
+
+    window.onload = aggiornaStorico;
+  </script>
 </body>
 </html>
