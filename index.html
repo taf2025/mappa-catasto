@@ -1,55 +1,14 @@
-# 🗺️ TSP Route Optimizer - Ottimizzatore di Percorsi
-
-Un'applicazione web open-source per risolvere il **Problema del Commesso Viaggiatore (TSP)**. Calcola il percorso più breve per visitare una serie di destinazioni, tornando al punto di partenza. Ideale per corrieri, agenti di vendita, o per pianificare viaggi multi-tappa.
-
-L'applicazione è contenuta in un unico file `index.html`, senza dipendenze esterne eccetto la libreria per le mappe [Leaflet.js](https://leafletjs.com/).
-
-[![Licenza: MIT](https://img.shields.io/badge/Licenza-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-## 🚀 Funzionalità
-
-* **Calcolo del Percorso Ottimizzato**: Utilizza un'euristica combinata (Nearest Neighbor + 2-Opt) per trovare una soluzione efficiente al TSP.
-* **Input Flessibile**: Aggiungi punti di destinazione in tre modi:
-    1.  **Inserimento manuale** di nome, latitudine e longitudine.
-    2.  **Importazione da file CSV** (formato: `nome,lat,long`).
-    3.  **Geocodifica di indirizzi** per convertirli automaticamente in coordinate.
-* **Drag & Drop**: Trascina il tuo file CSV direttamente sull'interfaccia per un caricamento rapido.
-* **Visualizzazione Interattiva**: Guarda il percorso calcolato su una mappa interattiva fornita da OpenStreetMap tramite Leaflet.js.
-* **Esportazione Multi-formato**: Esporta il percorso ottimizzato nei formati più comuni:
-    * **GPX**: Compatibile con la maggior parte dei navigatori GPS e app per lo sport.
-    * **KML**: Per l'uso con Google Earth e altre applicazioni GIS.
-    * **CSV**: Per l'analisi dei dati in fogli di calcolo.
-* **Integrazione con Google Maps**: Genera un link diretto per aprire l'intero percorso su Google Maps.
-* **Salvataggio Locale**: Salva e ricarica i tuoi percorsi direttamente nel browser, grazie all'uso di `localStorage`.
-* **Interfaccia Moderna**: Design pulito e responsive che si adatta a desktop e dispositivi mobili.
-
-## 🛠️ Tecnologie Utilizzate
-
-* **HTML5**: Per la struttura semantica della pagina.
-* **CSS3**: Per lo stile, con l'uso di Variabili CSS, Flexbox e Media Queries per la responsività.
-* **JavaScript (Vanilla)**: Tutta la logica dell'applicazione, dagli algoritmi TSP alla manipolazione del DOM, è scritta in JavaScript puro (ES6+), senza framework.
-* **[Leaflet.js](https://leafletjs.com/)**: Una libreria JavaScript open-source per mappe interattive.
-* **[Nominatim API](https://nominatim.openstreetmap.org/)**: Utilizzata per la geocodifica gratuita degli indirizzi.
-
-## ⚙️ Come si Usa
-
-1.  Apri il file `index.html` in un qualsiasi browser moderno.
-2.  **Aggiungi i punti**: Usa uno dei metodi disponibili per popolare la lista delle destinazioni. Ricorda che il primo punto della lista sarà sempre considerato il punto di partenza e di arrivo del tour.
-3.  **Calcola**: Clicca su `🚀 Calcola Percorso Ottimizzato` per eseguire l'algoritmo. In alternativa, clicca su `📏 Percorso Sequenziale` per vedere la distanza del percorso nell'ordine di inserimento.
-4.  **Visualizza**: Analizza il risultato sulla mappa, controlla la distanza totale e l'ordine delle tappe.
-5.  **Esporta o Salva**: Usa i pulsanti di esportazione per ottenere il file nel formato desiderato, oppure salva il percorso nel browser per un uso futuro.
-
-## 🤝 Contributi
-
-I contributi sono sempre benvenuti! Se hai idee per migliorare l'applicazione o correggere un bug:
-
-1.  Fai un Fork del repository.
-2.  Crea un nuovo branch (`git checkout -b feature/AmazingFeature`).
-3.  Apporta le tue modifiche.
-4.  Fai il Commit (`git commit -m 'Add some AmazingFeature'`).
-5.  Fai il Push al branch (`git push origin feature/AmazingFeature`).
-6.  Apri una Pull Request.
-
-## 📄 Licenza
-
-Questo progetto è rilasciato sotto la **Licenza MIT**. Vedi il file `LICENSE` per maggiori dettagli.
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSP Route Optimizer - Ottimizzatore di Percorsi</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+        crossorigin=""/>
+  <meta name="description" content="Ottimizzatore di percorsi con algoritmo del commesso viaggiatore (TSP). Calcola il percorso più breve tra più punti geografici.">
+…    });
+  </script>
+</body>
+</html>
