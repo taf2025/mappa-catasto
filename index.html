@@ -1,78 +1,99 @@
-<meta charset="UTF-8">
-<title>TAF Route Optimizer - Ottimizzatore di Percorsi TAF 2025
+entById('newPointLat').value);
+const lon = parseFloat(document.getElementById('newPointLon').value);
 
-TAF Route Optimizer - Ottimizzatore di Percorsi TAF 2025
-
-Aggiungi Punto
-
-<button id="aggiungi-punto">Aggiungi Punto
-
-Importa Punti
-<button id="ottimizza-percorso">Ottimizza Percorso
-const mappa = L.map('map').setView([41.9028, 12.4964], 6); // Centro in Italia
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mappa);
-
-const punti = [];
-
-document.getElementById("aggiungi-punto").addEventListener("click", () => {
-const nome = document.getElementById("nome").value;
-const lat = parseFloat(document.getElementById("latitude").value);
-const lng = parseFloat(document.getElementById("longitude").value);
-
-if (nome && !isNaN(lat) && !isNaN(lng)) {
-const punto = { nome, lat, lng };
-punti.push(punto);
-L.marker([lat, lng]).addTo(mappa).bindPopup(nome);
-creaListaPunti(punti);
-} else {
-alert("Inserisci dati validi");
-}
-});
-
-function creaListaPunti(puntiOttimizzati) {
-const listaPunti = document.getElementById("lista-punti");
-listaPunti.innerHTML = ""; // Svuota la lista precedente
-
-puntiOttimizzati.forEach(punto => {
-const li = document.createElement("li");
-li.innerHTML = ${punto.nome}| Apri in Waze;
-listaPunti.appendChild(li);
-});
+if (!name || isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+showError('Input non valido. Controlla le coordinate e riprova.');
+return;
 }
 
-document.getElementById("file-input").addEventListener("change", (event) => {
-const file = event.target.files[0];
-const reader = new FileReader();
-
-reader.onload = (e) => {
-const data = new Uint8Array(e.target.result);
-const workbook = XLSX.read(data, { type: 'array' });
-
-const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-const json = XLSX.utils.sheet_to_json(firstSheet);
-
-json.forEach(punto => {
-const lat = parseFloat(punto.Latitudine);
-const lng = parseFloat(punto.Longitudine);
-const nome = punto.Nome;
-
-if (nome && !isNaN(lat) && !isNaN(lng)) {
-const nuovoPunto = { nome, lat, lng };
-punti.push(nuovoPunto);
-L.marker([lat, lng]).addTo(mappa).bindPopup(nome);
-}
+points.push({ name, lat, lon });
+updatePointsTable();
+addMarker(lat, lon, name);
+showSuccess('Punto aggiunto con successo!');
 });
 
-creaListaPunti(punti);
+function addMarker(lat, lon, name) {
+const marker = L.marker([lat, lon]).addTo(map).bindPopup(name);
+}
+
+function updatePointsTable() {
+const tableBody = document.querySelector('#pointsTable tbody');
+tableBody.innerHTML = '';
+points.forEach((point, index) => {
+const row = tableBody.insertRow();
+row.insertCell(0).textContent = point.name;
+row.insertCell(1).textContent = point.lat;
+row.insertCell(2).textContent = point.lon;
+const removeCell = row.insertCell(3);
+const removeButton = document.createElement('button');
+removeButton.textContent = 'Rimuovi';
+removeButton.onclick = () => {
+points.splice(index, 1);
+updatePointsTable();
 };
-reader.readAsArrayBuffer(file);
+removeCell.appendChild(removeButton);
+});
+updateStartPointSelect();
+}
+
+function updateStartPointSelect() {
+const select = document.getElementById('startPointSelect');
+select.innerHTML = '';
+points.forEach((point, index) => {
+const option = document.createElement('option');
+option.value = index;
+option.textContent = point.name;
+select.appendChild(option);
+});
+}
+
+document.getElementById('addUserLocation').addEventListener('click', () => {
+navigator.geolocation.getCurrentPosition(position => {
+const lat = position.coords.latitude;
+const lon = position.coords.longitude;
+document.getElementById('newPointLat').value = lat;
+document.getElementById('newPointLon').value = lon;
+});
 });
 
-document.getElementById("ottimizza-percorso").addEventListener("click", () => {
-// Implementa l'algoritmo di ottimizzazione qui
-// Per il momento simuleremo l'ordinamento per esempio:
-const puntiOttimizzati = punti.sort((a, b) => a.nome.localeCompare(b.nome));
-creaListaPunti(puntiOttimizzati); // Crea la lista ordinata per nome
-alert("Percorso ottimizzato!");
+document.getElementById('geocodeAddress').addEventListener('click', () => {
+const address = sanitizeInput(document.getElementById('addressInput').value);
+fetch(https://nominatim.openstreetmap.org/search?q=${address}&format=json&addressdetails=1)
+.then(response => response.json())
+.then(data => {
+if (data.length > 0) {
+const { lat, lon } = data[0];
+document.getElementById('newPointLat').value = lat;
+document.getElementById('newPointLon').value = lon;
+} else {
+showError('Indirizzo non trovato.');
+}
+})
+.catch(() => showError('Errore nel geocoding.'));
 });
-</script>
+
+document.getElementById('calculateRoute').addEventListener('click', () => {
+if (points.length === 0) {
+showError('Nessun punto disponibile per calcolare il percorso.');
+return;
+}
+
+const startIndex = parseInt(document.getElementById('startPointSelect').value);
+const startPoint = points[startIndex];
+
+const route = calculateRoute(points, startPoint);
+displayRoute(route);
+});
+
+function calculateRoute(points, startPoint) {
+// Implementazione Nearest Neighbor e 2-Opt qui
+// Restituisce un array di punti nell'ordine ottimale
+return points; // Placeholder - sostituire con implementazione javaScript.
+}
+
+function displayRoute(route) {
+const routeCoords = route.map(point => [point.lat, point.lon]);
+const path = L.polyline(routeCoords, { color: 'red' }).addTo(map);
+const distance = path.getDistance() / 1000; // Converti a km
+document.getElementById('result').textContent = Distanza totale: ${distance.toFixed(2)} km;
+}
