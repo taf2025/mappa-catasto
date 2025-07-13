@@ -22,6 +22,292 @@
   </style>
 </head>
 <body>
-  <!-- ... Contenuto completo dell'app HTML ... -->
+  <div class="container">
+    <h1>🗺️ TSP Route Optimizer</h1>
+    <div class="form-group">
+      <label for="fileInput">Importa file CSV, XLS o XLSX:</label>
+      <input type="file" id="fileInput" accept=".csv, .xls, .xlsx">
+    </div>
+    <div class="form-group">
+      <label for="nome">Nome punto:</label>
+      <input type="text" id="nome" placeholder="Es: Milano Centro">
+    </div>
+    <div class="form-group">
+      <label for="lat">Latitudine:</label>
+      <input type="text" id="lat" placeholder="Es: 45.4642">
+    </div>
+    <div class="form-group">
+      <label for="lon">Longitudine:</label>
+      <input type="text" id="lon" placeholder="Es: 9.1900">
+    </div>
+    <button onclick="aggiungiPuntoManuale()">➕ Aggiungi Punto</button>
+    <button onclick="aggiungiMiaPosizione()">📍 Usa Posizione Attuale</button>
+    <div class="form-group">
+      <label for="indirizzo">Indirizzo da geocodificare:</label>
+      <input type="text" id="indirizzo" placeholder="Es: Via Roma 10, Milano">
+      <button onclick="geocodificaIndirizzo()">📌 Aggiungi Indirizzo</button>
+    </div>
+    <div class="form-group">
+      <label for="puntoPartenza">📍 Seleziona punto di partenza:</label>
+      <select id="puntoPartenza"></select>
+    </div>
+    <div id="map"></div>
+    <div class="form-group">
+      <button onclick="calcolaPercorso()">🚀 Calcola Percorso Ottimizzato</button>
+    </div>
+    <div id="statistiche"></div>
+    <div id="tabellaPunti"></div>
+    <div id="tabellaPercorso"></div>
+    <div class="form-group">
+      <button onclick="esportaCSV()">📄 Esporta CSV</button>
+      <button onclick="esportaKML()">🗺️ Esporta KML</button>
+      <button onclick="esportaGPX()">📍 Esporta GPX</button>
+    </div>
+    <div class="error-box" id="errorBox"><span id="errorText"></span></div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+    // JavaScript completo per TSP Route Optimizer
+const punti = [];
+let mappa, markers = [], lineaPercorso;
+
+function sanitizeInput(input) {
+  return input.trim().replace(/[<>"']/g, '');
+}
+
+function mostraErrore(msg) {
+  const box = document.getElementById("errorBox");
+  document.getElementById("errorText").textContent = msg;
+  box.style.display = "block";
+  setTimeout(() => box.style.display = "none", 5000);
+}
+
+function validaCoordinate(lat, lon) {
+  const la = parseFloat(lat);
+  const lo = parseFloat(lon);
+  if (isNaN(la) || isNaN(lo) || la < -90 || la > 90 || lo < -180 || lo > 180) return false;
+  return true;
+}
+
+function aggiornaSelectPartenza() {
+  const sel = document.getElementById("puntoPartenza");
+  sel.innerHTML = punti.map((p, i) => `<option value="${i}">${p.nome}</option>`).join("");
+}
+
+function aggiornaTabella() {
+  const tab = document.getElementById("tabellaPunti");
+  if (!punti.length) return tab.innerHTML = "<p>Nessun punto inserito.</p>";
+  tab.innerHTML = `<table><thead><tr><th>#</th><th>Nome</th><th>Lat</th><th>Lon</th><th>Azioni</th></tr></thead><tbody>` +
+    punti.map((p, i) => `<tr><td>${i + 1}</td><td>${p.nome}</td><td>${p.lat}</td><td>${p.lon}</td><td><button onclick="rimuoviPunto(${i})">❌</button></td></tr>`).join("") +
+    `</tbody></table>`;
+  aggiornaSelectPartenza();
+}
+
+function aggiungiPunto(p) {
+  punti.push(p);
+  aggiornaTabella();
+  disegnaPercorso(punti);
+}
+
+function rimuoviPunto(i) {
+  punti.splice(i, 1);
+  aggiornaTabella();
+  disegnaPercorso(punti);
+}
+
+function aggiungiPuntoManuale() {
+  const nome = sanitizeInput(document.getElementById("nome").value);
+  const lat = document.getElementById("lat").value;
+  const lon = document.getElementById("lon").value;
+  if (!validaCoordinate(lat, lon)) return mostraErrore("Coordinate non valide");
+  aggiungiPunto({ nome, lat: parseFloat(lat), lon: parseFloat(lon) });
+}
+
+function aggiungiMiaPosizione() {
+  if (!navigator.geolocation) return mostraErrore("Geolocalizzazione non supportata");
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude, longitude } = pos.coords;
+    aggiungiPunto({ nome: "Posizione Attuale", lat: latitude, lon: longitude });
+  }, () => mostraErrore("Impossibile ottenere posizione"));
+}
+
+async function geocodificaIndirizzo() {
+  const indirizzo = sanitizeInput(document.getElementById("indirizzo").value);
+  if (!indirizzo) return;
+  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(indirizzo)}`);
+  const data = await r.json();
+  if (!data.length) return mostraErrore("Indirizzo non trovato");
+  const { lat, lon, display_name } = data[0];
+  aggiungiPunto({ nome: display_name, lat: parseFloat(lat), lon: parseFloat(lon) });
+}
+
+function calcolaDistanza(p1, p2) {
+  const R = 6371;
+  const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+  const dLon = (p2.lon - p1.lon) * Math.PI / 180;
+  const a = Math.sin(dLat/2) ** 2 + Math.cos(p1.lat * Math.PI/180) * Math.cos(p2.lat * Math.PI/180) * Math.sin(dLon/2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function tspNearestNeighbor(puntiInput) {
+  const visited = [puntiInput[0]];
+  let remaining = puntiInput.slice(1);
+  while (remaining.length) {
+    const last = visited[visited.length - 1];
+    let next = remaining.reduce((min, p) => calcolaDistanza(last, p) < calcolaDistanza(last, min) ? p : min);
+    visited.push(next);
+    remaining = remaining.filter(p => p !== next);
+  }
+  return visited;
+}
+
+function tsp3Opt(percorso) {
+  let migliorato = true;
+  while (migliorato) {
+    migliorato = false;
+    for (let i = 1; i < percorso.length - 2; i++) {
+      for (let j = i + 1; j < percorso.length - 1; j++) {
+        for (let k = j + 1; k < percorso.length; k++) {
+          const nuovo = [...percorso.slice(0, i), ...percorso.slice(i, j).reverse(), ...percorso.slice(j, k).reverse(), ...percorso.slice(k)];
+          if (calcolaLunghezza(nuovo) < calcolaLunghezza(percorso)) {
+            percorso = nuovo;
+            migliorato = true;
+          }
+        }
+      }
+    }
+  }
+  return percorso;
+}
+
+function calcolaLunghezza(percorso) {
+  let somma = 0;
+  for (let i = 0; i < percorso.length - 1; i++) {
+    somma += calcolaDistanza(percorso[i], percorso[i+1]);
+  }
+  somma += calcolaDistanza(percorso[percorso.length-1], percorso[0]);
+  return somma;
+}
+
+function calcolaPercorso() {
+  if (punti.length < 2) return mostraErrore("Almeno 2 punti richiesti");
+  const startIndex = parseInt(document.getElementById("puntoPartenza").value);
+  const ordered = punti.slice(startIndex).concat(punti.slice(0, startIndex));
+  let ottimo = tspNearestNeighbor(ordered);
+  ottimo = tsp3Opt(ottimo);
+  disegnaPercorso(ottimo);
+  mostraTabellaPercorso(ottimo);
+  document.getElementById("statistiche").innerHTML = `<p>🚗 Distanza totale: ${calcolaLunghezza(ottimo).toFixed(2)} km</p>`;
+}
+
+function disegnaPercorso(percorso) {
+  if (!mappa) {
+    mappa = L.map("map").setView([41.9, 12.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(mappa);
+  }
+  markers.forEach(m => m.remove());
+  if (lineaPercorso) lineaPercorso.remove();
+  markers = percorso.map(p => L.marker([p.lat, p.lon]).addTo(mappa).bindPopup(`<b>${p.nome}</b>`));
+  const latlngs = percorso.map(p => [p.lat, p.lon]);
+  latlngs.push(latlngs[0]);
+  lineaPercorso = L.polyline(latlngs, { color: 'blue' }).addTo(mappa);
+  mappa.fitBounds(lineaPercorso.getBounds());
+}
+
+function mostraTabellaPercorso(percorso) {
+  const tab = document.getElementById("tabellaPercorso");
+  tab.innerHTML = `<h3>📍 Percorso Ottimizzato</h3><table><thead><tr><th>#</th><th>Nome</th><th>Link</th></tr></thead><tbody>` +
+    percorso.map((p, i) => {
+      const gmap = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`;
+      const waze = `https://waze.com/ul?ll=${p.lat},${p.lon}&navigate=yes`;
+      return `<tr><td>${i + 1}</td><td>${p.nome}</td><td><a href='${gmap}' target='_blank'>Google</a> | <a href='${waze}' target='_blank'>Waze</a></td></tr>`;
+    }).join("") + `</tbody></table>`;
+}
+
+function esportaCSV() {
+  if (!punti.length) return;
+  const righe = ["nome,lat,lon", ...punti.map(p => `${p.nome},${p.lat},${p.lon}`)];
+  const blob = new Blob([righe.join("
+")], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'percorso.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function esportaKML() {
+  const kml = `<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>` +
+    punti.map(p => `<Placemark><name>${p.nome}</name><Point><coordinates>${p.lon},${p.lat}</coordinates></Point></Placemark>`).join('') +
+    `</Document></kml>`;
+  const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'percorso.kml';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function esportaGPX() {
+  const gpx = `<?xml version="1.0"?><gpx version="1.1" creator="TSP Route Optimizer" xmlns="http://www.topografix.com/GPX/1/1">` +
+    punti.map(p => `<wpt lat="${p.lat}" lon="${p.lon}"><name>${p.nome}</name></wpt>`).join('') +
+    `</gpx>`;
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'percorso.gpx';
+  a.click();
+  URL.revokeObjectURL(url);
+} con tutte le funzioni richieste
+    // incluso: geocoding, importazione file, algoritmo TSP, 3-opt, gestione mappe
+
+// Gestione importazione file
+
+document.getElementById("fileInput").addEventListener("change", handleFileImport);
+
+function handleFileImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  const estensione = file.name.split('.').pop().toLowerCase();
+
+  if (estensione === "csv") {
+    reader.onload = function (e) {
+      const lines = e.target.result.split(/
+?
+/);
+      lines.forEach(line => {
+        const [nome, lat, lon] = line.split(",");
+        if (validaCoordinate(lat, lon)) {
+          aggiungiPunto({ nome: sanitizeInput(nome), lat: parseFloat(lat), lon: parseFloat(lon) });
+        }
+      });
+    };
+    reader.readAsText(file);
+  } else if (["xls", "xlsx"].includes(estensione)) {
+    reader.onload = function (e) {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      json.forEach(row => {
+        if (row.length >= 3) {
+          const [nome, lat, lon] = row;
+          if (validaCoordinate(lat, lon)) {
+            aggiungiPunto({ nome: sanitizeInput(nome), lat: parseFloat(lat), lon: parseFloat(lon) });
+          }
+        }
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    mostraErrore("Formato file non supportato");
+  }
+}
+  </script>
 </body>
 </html>
