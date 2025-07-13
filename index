@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ottimizzatore di Percorsi</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 1rem;
+      background: #a4cca5;
+    }
+    .container {
+      max-width: 1000px;
+      margin: auto;
+      background: #fff;
+      padding: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #121009;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    label {
+      font-weight: bold;
+      color: #121009;
+    }
+    input,
+    button {
+      padding: 0.5rem;
+      font-size: 1rem;
+      width: 100%;
+      margin-top: 0.25rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      background: #82b945;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #9cba92;
+    }
+    #map {
+      height: 500px;
+      margin-top: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    #routeList {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #e7f4e4;
+      border-radius: 6px;
+      color: #121009;
+    }
+    #totalDistance {
+      margin-top: 0.5rem;
+      font-weight: bold;
+      color: #121009;
+    }
+    .export-button {
+      margin-top: 1rem;
+      background-color: #82b945;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Ottimizzatore di Percorsi</h1>
+    <div class="form-group">
+      <label for="fileInput">Carica un file CSV con i punti (nome, lat, lon):</label>
+      <input type="file" id="fileInput" accept=".csv" />
+    </div>
+    <div class="form-group">
+      <label for="startAddress">Indirizzo di partenza (opzionale):</label>
+      <input type="text" id="startAddress" placeholder="Es. Via Roma 1, Milano" />
+      <button onclick="usaIndirizzoPartenza()">Usa indirizzo</button>
+    </div>
+    <button onclick="resetTutto()">Reset</button>
+    <div id="map"></div>
+    <div id="routeList"></div>
+    <div id="totalDistance"></div>
+    <button class="export-button" onclick="esportaPercorso()">Esporta percorso CSV</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script>
+    let map = L.map("map").setView([41.9, 12.5], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+
+    let markers = [];
+    let routePoints = [];
+    let routeLine;
+    let startPoint = null;
+    let distanzaTotale = 0;
+
+    // Calcola distanza tra due punti in km (Haversine)
+    function distanza(a, b) {
+      const R = 6371;
+      const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+      const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+      const lat1 = (a.lat * Math.PI) / 180;
+      const lat2 = (b.lat * Math.PI) / 180;
+      const x =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.sin(dLon / 2) *
+          Math.sin(dLon / 2) *
+          Math.cos(lat1) *
+          Math.cos(lat2);
+      const y = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+      return R * y;
+    }
+
+    // Ottimizza percorso con algoritmo Nearest Neighbor
+    function ottimizzaPercorso(punti, start) {
+      if (!punti.length) return [];
+      let nonVisitati = [...punti];
+      let percorso = [];
+
+      // Punto di partenza: start se definito, altrimenti primo punto
+      let current;
+      if (start) {
+        // Cerca se start è nella lista dei punti (matching per nome e coordinate)
+        // Se no, aggiungi all’inizio
+        const idx = nonVisitati.findIndex(
+          (p) =>
+            Math.abs(p.lat - start.lat) < 1e-6 &&
+            Math.abs(p.lon - start.lon) < 1e-6
+        );
+        if (idx >= 0) {
+          current = nonVisitati.splice(idx, 1)[0];
+        } else {
+          current = { ...start };
+        }
+      } else {
+        current = nonVisitati.shift();
+      }
+
+      percorso.push(current);
+
+      while (nonVisitati.length) {
+        let nearestIdx = 0;
+        let nearestDist = distanza(current, nonVisitati[0]);
+        for (let i = 1; i < nonVisitati.length; i++) {
+          let dist = distanza(current, nonVisitati[i]);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestIdx = i;
+          }
+        }
+        current = nonVisitati.splice(nearestIdx, 1)[0];
+        percorso.push(current);
+      }
+      return percorso;
+    }
+
+    function clearMarkers() {
+      markers.forEach((m) => map.removeLayer(m));
+      markers = [];
+      if (routeLine) map.removeLayer(routeLine);
+      routeLine = null;
+      document.getElementById("routeList").innerHTML = "";
+      document.getElementById("totalDistance").textContent = "";
+      distanzaTotale = 0;
+    }
+
+    function aggiungiPunto(punto, index) {
+      const marker = L.marker([punto.lat, punto.lon], {
+        title: `${index + 1}`,
+      }).addTo(map);
+      marker.bindPopup(
+        `<strong>${index + 1}. ${punto.nome}</strong><br>Lat: ${punto.lat}<br>Lon: ${punto.lon}`
+      );
+      marker.bindTooltip(`${index + 1}`, { permanent: true, direction: "top" });
+      markers.push(marker);
+    }
+
+    function disegnaPercorso(percorso) {
+      if (routeLine) map.removeLayer(routeLine);
+      const latlngs = percorso.map((p) => [p.lat, p.lon]);
+      routeLine = L.polyline(latlngs, { color: "blue" }).addTo(map);
+      map.fitBounds(routeLine.getBounds());
+    }
+
+    function mostraLista(percorso) {
+      let html = "<h2>Percorso ottimizzato</h2><ol>";
+      percorso.forEach((p, i) => {
+        const url = `https://www.google.com/maps?q=${p.lat},${p.lon}`;
+        html += `<li><a href='${url}' target='_blank'>${i + 1}. ${p.nome}</a></li>`;
+      });
+      html += "</ol>";
+      document.getElementById("routeList").innerHTML = html;
+    }
+
+    function mostraDistanza(totale) {
+      document.getElementById(
+        "totalDistance"
+      ).textContent = `Distanza totale: ${totale.toFixed(2)} km`;
+    }
+
+    function calcolaDistanzaTotale(punti) {
+      distanzaTotale = 0;
+      for (let i = 1; i < punti.length; i++) {
+        distanzaTotale += distanza(punti[i - 1], punti[i]);
+      }
+      mostraDistanza(distanzaTotale);
+    }
+
+    function mostraPercorso() {
+      clearMarkers();
+
+      if (routePoints.length === 0) return;
+
+      // Ottimizza percorso con punto di partenza se presente
+      let percorsoOttimizzato = ottimizzaPercorso(
+        routePoints,
+        startPoint
+      );
+
+      // Se startPoint non è nei punti e definito, aggiungilo all’inizio (già fatto in ottimizzaPercorso)
+      // Mostra marker, linea, lista, distanza
+      percorsoOttimizzato.forEach((p, i) => aggiungiPunto(p, i));
+      disegnaPercorso(percorsoOttimizzato);
+      mostraLista(percorsoOttimizzato);
+      calcolaDistanzaTotale(percorsoOttimizzato);
+    }
+
+    document.getElementById("fileInput").addEventListener("change", function (event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      Papa.parse(file, {
+        header: false,
+        skipEmptyLines: true,
+        complete: function (results) {
+          const dati = results.data;
+          routePoints = [];
+          for (let i = 0; i < dati.length; i++) {
+            const [nome, lat, lon] = dati[i];
+            if (!isNaN(parseFloat(lat)) && !isNaN(parseFloat(lon))) {
+              routePoints.push({ nome, lat: parseFloat(lat), lon: parseFloat(lon) });
+            }
+          }
+          mostraPercorso();
+        },
+      });
+    });
+
+    function usaIndirizzoPartenza() {
+      const indirizzo = document.getElementById("startAddress").value;
+      if (!indirizzo) return;
+      fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          indirizzo
+        )}`
+      )
+        .then((response) => response.json())
+        .then((data) => {
+          if (data && data.length > 0) {
+            const posizione = data[0];
+            startPoint = {
+              nome: "Partenza",
+              lat: parseFloat(posizione.lat),
+              lon: parseFloat(posizione.lon),
+            };
+            mostraPercorso();
+          } else {
+            alert("Indirizzo non trovato.");
+          }
+        })
+        .catch((error) => {
+          console.error("Errore nel recupero coordinate:", error);
+          alert("Errore nella ricerca dell'indirizzo.");
+        });
+    }
+
+    function resetTutto() {
+      clearMarkers();
+      document.getElementById("fileInput").value = "";
+      document.getElementById("startAddress").value = "";
+      routePoints = [];
+      startPoint = null;
+      map.setView([41.9, 12.5], 6);
+    }
+
+    function esportaPercorso() {
+      if (!routePoints.length) return;
+      // Esporta il percorso ottimizzato, non la lista grezza
+      const percorsoOttimizzato = ottimizzaPercorso(routePoints, startPoint);
+      let csv = "Posizione,Nome,Latitudine,Longitudine\n";
+      percorsoOttimizzato.forEach((p, i) => {
+        csv += `${i + 1},"${p.nome}",${p.lat},${p.lon}\n`;
+      });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute("download", "percorso_ottimizzato.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  </script>
+</body>
+</html>
